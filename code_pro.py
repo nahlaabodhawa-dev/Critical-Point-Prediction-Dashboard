@@ -28,8 +28,7 @@ run_button = st.sidebar.button("Start Training & Analyze Results", type="primary
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📱 App QR Code")
-app_url = "https://your-app-name.streamlit.app"
-
+app_url = "https://critical-point-prediction-dashboard-lyecr5liams58tpxqqcub3.streamlit.app"
 qr = qrcode.QRCode(version=1, box_size=10, border=4)
 qr.add_data(app_url)
 qr.make(fit=True)
