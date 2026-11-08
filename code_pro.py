@@ -269,4 +269,138 @@ if run_button or st.session_state.get("trained", False):
             axes[1].grid(True, linestyle="--", alpha=0.5)
             plt.tight_layout()
             
-            st.subheader("📈
+            st.subheader("📈 Original Data Distribution")
+            st.pyplot(fig_orig)
+            plt.close(fig_orig)
+            
+            st.success("Models training completed successfully!")
+            
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "📊 Performance Metrics", 
+                "📉 Loss Curves", 
+                "🌐 All Components Predictions", 
+                "📈 Phase Envelopes Comparison"
+            ])
+            
+            with tab1:
+                st.subheader("📋 Model Performance Comparison (Metrics Summary)")
+                st.dataframe(metrics_df, use_container_width=True)
+            
+            with tab2:
+                st.subheader("📉 Training & Testing Loss Curves per Model")
+                cols = st.columns(2)
+                for i, m_name in enumerate(models_list):
+                    with cols[i%2]:
+                        st.pyplot(loss_figs[m_name])
+                        plt.close(loss_figs[m_name])
+            
+            with tab3:
+                st.subheader("🌐 Comprehensive Evaluation Across All Components")
+                st.markdown("This table iterates through **all components** in the dataset, predicting their critical properties.")
+                
+                all_comp_preds = []
+                for _, row in clean_df.iterrows():
+                    comp_name = row["name"]
+                    actual_tc = row["Tc mean (K)"]
+                    actual_pc = row["Pc mean (bar)"]
+                    
+                    feat = np.array([[float(row["Vc"]), float(row["Mw"]), float(row["Zc"])]])
+                    feat_mlp = scaler_X.transform(feat)
+                    
+                    pred_rf_tc = trained_models["random_forest"]["model_tc"].predict(feat)[0]
+                    pred_rf_pc = trained_models["random_forest"]["model_pc"].predict(feat)[0]
+                    pred_xgb_tc = trained_models["xgboost"]["model_tc"].predict(feat)[0]
+                    pred_xgb_pc = trained_models["xgboost"]["model_pc"].predict(feat)[0]
+                    pred_mlp_tc = trained_models["mlp"]["model_tc"].predict(feat_mlp)[0]
+                    pred_mlp_pc = trained_models["mlp"]["model_pc"].predict(feat_mlp)[0]
+                    
+                    all_comp_preds.append({
+                        "Component": comp_name,
+                        "Actual Tc (K)": round(actual_tc, 2),
+                        "RF Tc (K)": round(pred_rf_tc, 2),
+                        "XGB Tc (K)": round(pred_xgb_tc, 2),
+                        "MLP Tc (K)": round(pred_mlp_tc, 2),
+                        "Actual Pc (bar)": round(actual_pc, 2),
+                        "RF Pc (bar)": round(pred_rf_pc, 2),
+                        "XGB Pc (bar)": round(pred_xgb_pc, 2),
+                        "MLP Pc (bar)": round(pred_mlp_pc, 2),
+                    })
+                
+                df_all_predictions = pd.DataFrame(all_comp_preds)
+                st.dataframe(df_all_predictions, use_container_width=True)
+            
+            with tab4:
+                st.subheader("📈 P-T Phase Envelopes & Mixtures Analysis")
+                available_names = clean_df["name"].dropna().unique()
+                
+                system_category = st.selectbox(
+                    "Select System Category:", 
+                    ["Pure Component (Pure)", "Ternary Mixture (3 Components)", "Pentary Mixture (5 Components)", "Custom Mixture Selection"],
+                    key="system_category_select"
+                )
+                
+                mix_dict = {}
+                if system_category == "Pure Component (Pure)":
+                    selected_pure = st.selectbox(
+                        "Select Pure Component:", 
+                        options=available_names,
+                        key="pure_component_select"
+                    )
+                    if selected_pure:
+                        mix_dict = {selected_pure: 1.0}
+                elif system_category == "Ternary Mixture (3 Components)":
+                    selected_ternary = st.multiselect(
+                        "Select exactly 3 components:", 
+                        options=available_names, 
+                        default=list(available_names[:3]) if len(available_names)>=3 else list(available_names),
+                        key="ternary_mixture_select"
+                    )
+                    if len(selected_ternary) > 0:
+                        fraction = 1.0 / len(selected_ternary)
+                        mix_dict = {comp: fraction for comp in selected_ternary}
+                elif system_category == "Pentary Mixture (5 Components)":
+                    selected_pentary = st.multiselect(
+                        "Select up to 5 components:", 
+                        options=available_names, 
+                        default=list(available_names[:5]) if len(available_names)>=5 else list(available_names),
+                        key="pentary_mixture_select"
+                    )
+                    if len(selected_pentary) > 0:
+                        fraction = 1.0 / len(selected_pentary)
+                        mix_dict = {comp: fraction for comp in selected_pentary}
+                else:
+                    selected_custom = st.multiselect(
+                        "Select custom components:", 
+                        options=available_names, 
+                        default=list(available_names[:2]),
+                        key="custom_mixture_select"
+                    )
+                    if len(selected_custom) > 0:
+                        fraction = 1.0 / len(selected_custom)
+                        mix_dict = {comp: fraction for comp in selected_custom}
+                
+                if len(mix_dict) > 0:
+                    fig_comb, ax_c = plt.subplots(figsize=(8, 5), dpi=120, facecolor="white")
+                    ax_c.set_facecolor("white")
+                    
+                    _, T_r, P_r, Tc_mix_r, Pc_mix_r = generate_envelope_plot(clean_df, mix_dict, "real_data", True, scaler_X, model_colors)
+                    plt.close()
+                    
+                    fig_comb, ax_c = plt.subplots(figsize=(8, 5), dpi=120, facecolor="white")
+                    ax_c.set_facecolor("white")
+                    
+                    ax_c.plot(T_r, P_r, color=model_colors["real_data"], lw=2.2, label="Real Data")
+                    for m_name in models_list:
+                        _, Tv, Pv, _, _ = generate_envelope_plot(clean_df, mix_dict, m_name, False, scaler_X, model_colors, trained_models[m_name])
+                        plt.close()
+                        ax_c.plot(Tv, Pv, color=model_colors[m_name], lw=1.8, label=m_name.upper())
+                    
+                    ax_c.set_xlabel("Temperature (T) [K]", fontsize=10, fontweight="bold", color="green")
+                    ax_c.set_ylabel("Pressure (P) [bar]", fontsize=10, fontweight="bold", color="green")
+                    ax_c.set_title("Combined P-T Phase Envelopes Comparison", fontsize=11, fontweight="bold")
+                    ax_c.legend(frameon=True, facecolor="white")
+                    ax_c.grid(True, linestyle="--", alpha=0.5)
+                    st.pyplot(fig_comb)
+                    plt.close(fig_comb)
+else:
+    st.info("Please verify the file path in the sidebar and click the Start Training button.")
