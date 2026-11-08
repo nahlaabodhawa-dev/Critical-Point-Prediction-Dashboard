@@ -1,36 +1,3 @@
-import pandas as pd
-df = pd.read_csv('critprop_merged_final (1).csv')
-print(df.head(2))
-print(df.info())
-```text
-         name                smiles                                                                             inchi  mol weight (g/mol)  Tc mean (K)  Pc mean (bar)  rhoc mean (mol/L)  omega mean (-)        Vc       Mw        Zc  split
-0  nonadecane   CCCCCCCCCCCCCCCCCCC     InChI=1/C19H40/c1-3-5-7-9-11-13-15-17-19-18-16-14-12-10-8-6-4-2/h3-19H2,1-2H3             268.529        758.0           12.1              0.871           0.852  1.148106  268.529  0.220426  train
-1     icosane  CCCCCCCCCCCCCCCCCCCC  InChI=1/C20H42/c1-3-5-7-9-11-13-15-17-19-20-18-16-14-12-10-8-6-4-2/h3-20H2,1-2H3             282.556        768.0           11.6              0.828           0.907  1.207729  282.556  0.219397   test
-<class 'pandas.core.frame.DataFrame'>
-RangeIndex: 5790 entries, 0 to 5789
-Data columns (total 12 columns):
- #   Column              Non-Null Count  Dtype  
----  ------              --------------  -----  
- 0   name                5790 non-null   object 
- 1   smiles              5790 non-null   object 
- 2   inchi               5790 non-null   object 
- 3   mol weight (g/mol)  5790 non-null   float64
- 4   Tc mean (K)         5790 non-null   float64
- 5   Pc mean (bar)       5790 non-null   float64
- 6   rhoc mean (mol/L)   5790 non-null   float64
- 7   omega mean (-)      4831 non-null   float64
- 8   Vc                  5790 non-null   float64
- 9   Mw                  5790 non-null   float64
- 10  Zc                  5790 non-null   float64
- 11  split               5790 non-null   object 
-dtypes: float64(8), object(4)
-memory usage: 542.9+ KB
-None
-
-
-```
-
-```python
 import os
 import io
 import joblib
