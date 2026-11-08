@@ -521,4 +521,3 @@ if run_button or st.session_state.get("trained", True):
                 st.info("Results and chart files have= been saved successfully to local directories.")
 else:
     st.info("Please verify the file path in the sidebar and click the Start Training button.")
-```
