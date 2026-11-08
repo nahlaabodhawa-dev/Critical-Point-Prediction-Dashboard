@@ -14,6 +14,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
+
 st.set_page_config(
     page_title="Thermal Properties Analysis & Models",
     page_icon="📊",
@@ -29,6 +30,7 @@ run_button = st.sidebar.button("Start Training & Analyze Results", type="primary
 st.sidebar.markdown("---")
 st.sidebar.subheader("📱 App QR Code")
 app_url = "https://critical-point-prediction-dashboard-lyecr5liams58tpxqqcub3.streamlit.app"
+
 qr = qrcode.QRCode(version=1, box_size=10, border=4)
 qr.add_data(app_url)
 qr.make(fit=True)
@@ -39,6 +41,7 @@ img_qr.save(buf, format="PNG")
 byte_im = buf.getvalue()
 
 st.sidebar.image(byte_im, caption="Scan to open app", use_container_width=True)
+
 def generate_envelope_plot(df, mixture_composition, model_key, is_real_data, scaler_X, model_colors, model_obj_dict=None):
     comp_names = list(mixture_composition.keys())
     fractions = np.array(list(mixture_composition.values()), dtype=float)
@@ -244,7 +247,6 @@ if run_button:
                     "RMSE_Pc": np.sqrt(mean_squared_error(y_test_pc, pred_test_pc)),
                     "MAE_Pc": mean_absolute_error(y_test_pc, pred_test_pc), "R2_Pc": r2_score(y_test_pc, pred_test_pc)})
 
-                # 2. Create Loss Curves Plots
                 fig_loss, axes_loss = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
                 axes_loss[0].plot(train_losses_tc, label="Train Loss", color="blue", lw=2)
                 axes_loss[0].plot(test_losses_tc, label="Test Loss", color="red", linestyle="--", lw=2)
@@ -323,25 +325,49 @@ if run_button:
                 st.subheader("📈 P-T Phase Envelopes & Mixtures Analysis")
                 available_names = clean_df["name"].dropna().unique()
                 
-                system_category = st.selectbox("Select System Category:", ["Pure Component (Pure)", "Ternary Mixture (3 Components)", "Pentary Mixture (5 Components)", "Custom Mixture Selection"])
+                # إضافة المفاتيح (keys) لمنع إعادة التعيين التلقائي
+                system_category = st.selectbox(
+                    "Select System Category:", 
+                    ["Pure Component (Pure)", "Ternary Mixture (3 Components)", "Pentary Mixture (5 Components)", "Custom Mixture Selection"],
+                    key="system_category_select"
+                )
                 
                 mix_dict = {}
                 if system_category == "Pure Component (Pure)":
-                    selected_pure = st.selectbox("Select Pure Component:", options=available_names)
+                    selected_pure = st.selectbox(
+                        "Select Pure Component:", 
+                        options=available_names,
+                        key="pure_component_select"
+                    )
                     if selected_pure:
                         mix_dict = {selected_pure: 1.0}
                 elif system_category == "Ternary Mixture (3 Components)":
-                    selected_ternary = st.multiselect("Select exactly 3 components:", options=available_names, default=list(available_names[:3]) if len(available_names)>=3 else list(available_names))
+                    selected_ternary = st.multiselect(
+                        "Select exactly 3 components:", 
+                        options=available_names, 
+                        default=list(available_names[:3]) if len(available_names)>=3 else list(available_names),
+                        key="ternary_mixture_select"
+                    )
                     if len(selected_ternary) > 0:
                         fraction = 1.0 / len(selected_ternary)
                         mix_dict = {comp: fraction for comp in selected_ternary}
                 elif system_category == "Pentary Mixture (5 Components)":
-                    selected_pentary = st.multiselect("Select up to 5 components:", options=available_names, default=list(available_names[:5]) if len(available_names)>=5 else list(available_names))
+                    selected_pentary = st.multiselect(
+                        "Select up to 5 components:", 
+                        options=available_names, 
+                        default=list(available_names[:5]) if len(available_names)>=5 else list(available_names),
+                        key="pentary_mixture_select"
+                    )
                     if len(selected_pentary) > 0:
                         fraction = 1.0 / len(selected_pentary)
                         mix_dict = {comp: fraction for comp in selected_pentary}
                 else:
-                    selected_custom = st.multiselect("Select custom components:", options=available_names, default=list(available_names[:2]))
+                    selected_custom = st.multiselect(
+                        "Select custom components:", 
+                        options=available_names, 
+                        default=list(available_names[:2]),
+                        key="custom_mixture_select"
+                    )
                     if len(selected_custom) > 0:
                         fraction = 1.0 / len(selected_custom)
                         mix_dict = {comp: fraction for comp in selected_custom}
