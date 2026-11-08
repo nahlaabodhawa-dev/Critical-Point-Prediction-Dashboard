@@ -68,7 +68,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("### 🎛️ Control Panel")
-csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final (1).csv")
+csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final.csv")
 run_button = st.sidebar.button("⚡ Start & Analyze", type="primary")
 
 st.sidebar.markdown("---")
