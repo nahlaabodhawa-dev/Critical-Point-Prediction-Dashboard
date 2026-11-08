@@ -23,6 +23,7 @@ st.set_page_config(
 
 st.title("📊 Thermal Properties Analysis & Critical Point Prediction Dashboard")
 st.markdown("This application trains machine learning models, evaluates their performance, plots phase envelopes, and analyzes all components dynamically.")
+
 st.sidebar.header("Execution Settings")
 csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final.csv")
 run_button = st.sidebar.button("Start Training & Analyze Results", type="primary")
@@ -41,6 +42,117 @@ img_qr.save(buf, format="PNG")
 byte_im = buf.getvalue()
 
 st.sidebar.image(byte_im, caption="Scan to open app", use_container_width=True)
+
+@st.cache_data
+def load_and_clean_data(file_path):
+    df = pd.read_csv(file_path)
+    return df.dropna(subset=["Vc", "Mw", "Zc", "Tc mean (K)", "Pc mean (bar)"])
+
+@st.cache_resource
+def train_models_pipeline(file_path):
+    clean_df = load_and_clean_data(file_path)
+    train_df, test_df = train_test_split(clean_df, test_size=0.2, random_state=42)
+    
+    X_train_raw = train_df[["Vc", "Mw", "Zc"]]
+    y_train_tc = train_df["Tc mean (K)"]
+    y_train_pc = train_df["Pc mean (bar)"]
+    
+    X_test_raw = test_df[["Vc", "Mw", "Zc"]]
+    y_test_tc = test_df["Tc mean (K)"]
+    y_test_pc = test_df["Pc mean (bar)"]
+    
+    scaler_X = StandardScaler()
+    X_train_scaled = scaler_X.fit_transform(X_train_raw)
+    X_test_scaled = scaler_X.transform(X_test_raw)
+    
+    models_list = ["random_forest", "decision_tree", "mlp", "xgboost"]
+    trained_models = {}
+    metrics_results = []
+    loss_figs = {}
+    
+    for m_name in models_list:
+        X_tr = X_train_scaled if m_name == "mlp" else X_train_raw
+        X_te = X_test_scaled if m_name == "mlp" else X_test_raw
+        
+        if m_name == "random_forest":
+            model_tc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
+            model_pc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
+        elif m_name == "decision_tree":
+            model_tc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
+            model_pc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
+        elif m_name == "mlp":
+            model_tc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
+            model_pc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
+        elif m_name == "xgboost":
+            model_tc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
+            model_pc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
+            
+        train_losses_tc, test_losses_tc = [], []
+        train_losses_pc, test_losses_pc = [], []
+        
+        if m_name == "mlp":
+            for epoch in range(100):
+                model_tc.fit(X_tr, y_train_tc)
+                model_pc.fit(X_tr, y_train_pc)
+                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
+                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
+                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
+                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
+        elif m_name in ["random_forest", "xgboost"]:
+            for s in range(5, 105, 5):
+                model_tc.n_estimators = s
+                model_pc.n_estimators = s
+                model_tc.fit(X_tr, y_train_tc)
+                model_pc.fit(X_tr, y_train_pc)
+                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
+                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
+                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
+                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
+        else:
+            for d in range(1, 6):
+                model_tc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_tc)
+                model_pc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_pc)
+                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
+                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
+                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
+                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
+                
+        pred_train_tc = model_tc.predict(X_tr)
+        pred_test_tc = model_tc.predict(X_te)
+        pred_train_pc = model_pc.predict(X_tr)
+        pred_test_pc = model_pc.predict(X_te)
+        trained_models[m_name] = {"model_tc": model_tc, "model_pc": model_pc}
+        
+        metrics_results.append({
+            "Model": m_name.upper(), "Dataset": "Train",
+            "RMSE_Tc": np.sqrt(mean_squared_error(y_train_tc, pred_train_tc)),
+            "MAE_Tc": mean_absolute_error(y_train_tc, pred_train_tc), "R2_Tc": r2_score(y_train_tc, pred_train_tc),
+            "RMSE_Pc": np.sqrt(mean_squared_error(y_train_pc, pred_train_pc)),
+            "MAE_Pc": mean_absolute_error(y_train_pc, pred_train_pc), "R2_Pc": r2_score(y_train_pc, pred_train_pc)})
+        metrics_results.append({
+            "Model": m_name.upper(), "Dataset": "Test",
+            "RMSE_Tc": np.sqrt(mean_squared_error(y_test_tc, pred_test_tc)),
+            "MAE_Tc": mean_absolute_error(y_test_tc, pred_test_tc), "R2_Tc": r2_score(y_test_tc, pred_test_tc),
+            "RMSE_Pc": np.sqrt(mean_squared_error(y_test_pc, pred_test_pc)),
+            "MAE_Pc": mean_absolute_error(y_test_pc, pred_test_pc), "R2_Pc": r2_score(y_test_pc, pred_test_pc)})
+
+        fig_loss, axes_loss = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+        axes_loss[0].plot(train_losses_tc, label="Train Loss", color="blue", lw=2)
+        axes_loss[0].plot(test_losses_tc, label="Test Loss", color="red", linestyle="--", lw=2)
+        axes_loss[0].set_title(f"{m_name.upper()} - Tc Loss Curve", fontsize=10, fontweight="bold")
+        axes_loss[0].legend()
+        axes_loss[0].grid(True, linestyle="--", alpha=0.5)
+        
+        axes_loss[1].plot(train_losses_pc, label="Train Loss", color="blue", lw=2)
+        axes_loss[1].plot(test_losses_pc, label="Test Loss", color="red", linestyle="--", lw=2)
+        axes_loss[1].set_title(f"{m_name.upper()} - Pc Loss Curve", fontsize=10, fontweight="bold")
+        axes_loss[1].legend()
+        axes_loss[1].grid(True, linestyle="--", alpha=0.5)
+        plt.tight_layout()
+        loss_figs[m_name] = fig_loss
+
+    metrics_df = pd.DataFrame(metrics_results)
+    return clean_df, trained_models, scaler_X, metrics_df, loss_figs, models_list
 
 def generate_envelope_plot(df, mixture_composition, model_key, is_real_data, scaler_X, model_colors, model_obj_dict=None):
     comp_names = list(mixture_composition.keys())
@@ -124,34 +236,17 @@ def generate_envelope_plot(df, mixture_composition, model_key, is_real_data, sca
     
     return fig, T_vals, P_vals, Tc_mix, Pc_mix
 
-if run_button:
+if run_button or st.session_state.get("trained", False):
+    st.session_state["trained"] = True
     if not os.path.exists(csv_file_path):
-        st.error(f"File not found at the specified path: {csv_file_path}. Please make sure 'critprop_merged_final.csv' is uploaded to your repository.")
+        st.error(f"File not found at the specified path: {csv_file_path}. Please make sure 'critprop_merged_final.csv' is uploaded.")
     else:
-        with st.spinner("Reading data, training models, and generating comprehensive results... Please wait."):
+        with st.spinner("Loading data and models..."):
             os.makedirs("models_output_plots", exist_ok=True)
             os.makedirs("loss_curves_plots", exist_ok=True)
             os.makedirs("envelopes_diagrams/combined", exist_ok=True)
             
-            df = pd.read_csv(csv_file_path)
-            clean_df = df.dropna(subset=["Vc", "Mw", "Zc", "Tc mean (K)", "Pc mean (bar)"])
-            
-            train_df, test_df = train_test_split(clean_df, test_size=0.2, random_state=42)
-            X_train_raw, y_train_tc, y_train_pc = (
-                train_df[["Vc", "Mw", "Zc"]],
-                train_df["Tc mean (K)"],
-                train_df["Pc mean (bar)"])
-            X_test_raw, y_test_tc, y_test_pc = (
-                test_df[["Vc", "Mw", "Zc"]],
-                test_df["Tc mean (K)"],
-                test_df["Pc mean (bar)"])
-            
-            scaler_X = StandardScaler()
-            X_train_scaled = scaler_X.fit_transform(X_train_raw)
-            X_test_scaled = scaler_X.transform(X_test_raw)
-            
-            models_list = ["random_forest", "decision_tree", "mlp", "xgboost"]
-            metrics_results = []
+            clean_df, trained_models, scaler_X, metrics_df, loss_figs, models_list = train_models_pipeline(csv_file_path)
             model_colors = {
                 "real_data": "#212529",    
                 "random_forest": "#1b40ff",
@@ -174,228 +269,4 @@ if run_button:
             axes[1].grid(True, linestyle="--", alpha=0.5)
             plt.tight_layout()
             
-            st.subheader("📈 Original Data Distribution")
-            st.pyplot(fig_orig)
-            plt.close(fig_orig)
-            
-            trained_models = {}
-            loss_figs = {}
-            
-            for m_name in models_list:
-                X_tr = X_train_scaled if m_name == "mlp" else X_train_raw
-                X_te = X_test_scaled if m_name == "mlp" else X_test_raw
-                
-                if m_name == "random_forest":
-                    model_tc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
-                    model_pc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
-                elif m_name == "decision_tree":
-                    model_tc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
-                    model_pc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
-                elif m_name == "mlp":
-                    model_tc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
-                    model_pc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
-                elif m_name == "xgboost":
-                    model_tc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
-                    model_pc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
-                    
-                train_losses_tc, test_losses_tc = [], []
-                train_losses_pc, test_losses_pc = [], []
-                
-                if m_name == "mlp":
-                    for epoch in range(100):
-                        model_tc.fit(X_tr, y_train_tc)
-                        model_pc.fit(X_tr, y_train_pc)
-                        train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
-                        test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
-                        train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
-                        test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-                elif m_name in ["random_forest", "xgboost"]:
-                    for s in range(5, 105, 5):
-                        model_tc.n_estimators = s
-                        model_pc.n_estimators = s
-                        model_tc.fit(X_tr, y_train_tc)
-                        model_pc.fit(X_tr, y_train_pc)
-                        train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
-                        test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
-                        train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
-                        test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-                else:
-                    for d in range(1, 6):
-                        model_tc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_tc)
-                        model_pc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_pc)
-                        train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
-                        test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
-                        train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
-                        test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-                        
-                pred_train_tc = model_tc.predict(X_tr)
-                pred_test_tc = model_tc.predict(X_te)
-                pred_train_pc = model_pc.predict(X_tr)
-                pred_test_pc = model_pc.predict(X_te)
-                trained_models[m_name] = {"model_tc": model_tc, "model_pc": model_pc}
-                
-                metrics_results.append({
-                    "Model": m_name.upper(), "Dataset": "Train",
-                    "RMSE_Tc": np.sqrt(mean_squared_error(y_train_tc, pred_train_tc)),
-                    "MAE_Tc": mean_absolute_error(y_train_tc, pred_train_tc), "R2_Tc": r2_score(y_train_tc, pred_train_tc),
-                    "RMSE_Pc": np.sqrt(mean_squared_error(y_train_pc, pred_train_pc)),
-                    "MAE_Pc": mean_absolute_error(y_train_pc, pred_train_pc), "R2_Pc": r2_score(y_train_pc, pred_train_pc)})
-                metrics_results.append({
-                    "Model": m_name.upper(), "Dataset": "Test",
-                    "RMSE_Tc": np.sqrt(mean_squared_error(y_test_tc, pred_test_tc)),
-                    "MAE_Tc": mean_absolute_error(y_test_tc, pred_test_tc), "R2_Tc": r2_score(y_test_tc, pred_test_tc),
-                    "RMSE_Pc": np.sqrt(mean_squared_error(y_test_pc, pred_test_pc)),
-                    "MAE_Pc": mean_absolute_error(y_test_pc, pred_test_pc), "R2_Pc": r2_score(y_test_pc, pred_test_pc)})
-
-                fig_loss, axes_loss = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
-                axes_loss[0].plot(train_losses_tc, label="Train Loss", color="blue", lw=2)
-                axes_loss[0].plot(test_losses_tc, label="Test Loss", color="red", linestyle="--", lw=2)
-                axes_loss[0].set_title(f"{m_name.upper()} - Tc Loss Curve", fontsize=10, fontweight="bold")
-                axes_loss[0].legend()
-                axes_loss[0].grid(True, linestyle="--", alpha=0.5)
-                
-                axes_loss[1].plot(train_losses_pc, label="Train Loss", color="blue", lw=2)
-                axes_loss[1].plot(test_losses_pc, label="Test Loss", color="red", linestyle="--", lw=2)
-                axes_loss[1].set_title(f"{m_name.upper()} - Pc Loss Curve", fontsize=10, fontweight="bold")
-                axes_loss[1].legend()
-                axes_loss[1].grid(True, linestyle="--", alpha=0.5)
-                plt.tight_layout()
-                loss_figs[m_name] = fig_loss
-
-            metrics_df = pd.DataFrame(metrics_results)
-            st.success("Models training completed successfully!")
-            
-            tab1, tab2, tab3, tab4 = st.tabs([
-                "📊 Performance Metrics", 
-                "📉 Loss Curves", 
-                "🌐 All Components Predictions", 
-                "📈 Phase Envelopes Comparison"
-            ])
-            
-            with tab1:
-                st.subheader("📋 Model Performance Comparison (Metrics Summary)")
-                st.dataframe(metrics_df, use_container_width=True)
-                metrics_df.to_csv("models_output_plots/models_performance_metrics.csv", index=False)
-            
-            with tab2:
-                st.subheader("📉 Training & Testing Loss Curves per Model")
-                cols = st.columns(2)
-                for i, m_name in enumerate(models_list):
-                    with cols[i%2]:
-                        st.pyplot(loss_figs[m_name])
-                        plt.close(loss_figs[m_name])
-            
-            with tab3:
-                st.subheader("🌐 Comprehensive Evaluation Across All Components")
-                st.markdown("This table iterates through **all components** in the dataset, predicting their critical properties ($Tc, Pc$) using the trained models.")
-                
-                all_comp_preds = []
-                for _, row in clean_df.iterrows():
-                    comp_name = row["name"]
-                    actual_tc = row["Tc mean (K)"]
-                    actual_pc = row["Pc mean (bar)"]
-                    
-                    feat = np.array([[float(row["Vc"]), float(row["Mw"]), float(row["Zc"])]])
-                    
-                    feat_mlp = scaler_X.transform(feat)
-                    pred_rf_tc = trained_models["random_forest"]["model_tc"].predict(feat)[0]
-                    pred_rf_pc = trained_models["random_forest"]["model_pc"].predict(feat)[0]
-                    pred_xgb_tc = trained_models["xgboost"]["model_tc"].predict(feat)[0]
-                    pred_xgb_pc = trained_models["xgboost"]["model_pc"].predict(feat)[0]
-                    pred_mlp_tc = trained_models["mlp"]["model_tc"].predict(feat_mlp)[0]
-                    pred_mlp_pc = trained_models["mlp"]["model_pc"].predict(feat_mlp)[0]
-                    
-                    all_comp_preds.append({
-                        "Component": comp_name,
-                        "Actual Tc (K)": round(actual_tc, 2),
-                        "RF Tc (K)": round(pred_rf_tc, 2),
-                        "XGB Tc (K)": round(pred_xgb_tc, 2),
-                        "MLP Tc (K)": round(pred_mlp_tc, 2),
-                        "Actual Pc (bar)": round(actual_pc, 2),
-                        "RF Pc (bar)": round(pred_rf_pc, 2),
-                        "XGB Pc (bar)": round(pred_xgb_pc, 2),
-                        "MLP Pc (bar)": round(pred_mlp_pc, 2),
-                    })
-                
-                df_all_predictions = pd.DataFrame(all_comp_preds)
-                st.dataframe(df_all_predictions, use_container_width=True)
-                df_all_predictions.to_csv("models_output_plots/all_components_predictions_summary.csv", index=False)
-            
-            with tab4:
-                st.subheader("📈 P-T Phase Envelopes & Mixtures Analysis")
-                available_names = clean_df["name"].dropna().unique()
-                
-                # إضافة المفاتيح (keys) لمنع إعادة التعيين التلقائي
-                system_category = st.selectbox(
-                    "Select System Category:", 
-                    ["Pure Component (Pure)", "Ternary Mixture (3 Components)", "Pentary Mixture (5 Components)", "Custom Mixture Selection"],
-                    key="system_category_select"
-                )
-                
-                mix_dict = {}
-                if system_category == "Pure Component (Pure)":
-                    selected_pure = st.selectbox(
-                        "Select Pure Component:", 
-                        options=available_names,
-                        key="pure_component_select"
-                    )
-                    if selected_pure:
-                        mix_dict = {selected_pure: 1.0}
-                elif system_category == "Ternary Mixture (3 Components)":
-                    selected_ternary = st.multiselect(
-                        "Select exactly 3 components:", 
-                        options=available_names, 
-                        default=list(available_names[:3]) if len(available_names)>=3 else list(available_names),
-                        key="ternary_mixture_select"
-                    )
-                    if len(selected_ternary) > 0:
-                        fraction = 1.0 / len(selected_ternary)
-                        mix_dict = {comp: fraction for comp in selected_ternary}
-                elif system_category == "Pentary Mixture (5 Components)":
-                    selected_pentary = st.multiselect(
-                        "Select up to 5 components:", 
-                        options=available_names, 
-                        default=list(available_names[:5]) if len(available_names)>=5 else list(available_names),
-                        key="pentary_mixture_select"
-                    )
-                    if len(selected_pentary) > 0:
-                        fraction = 1.0 / len(selected_pentary)
-                        mix_dict = {comp: fraction for comp in selected_pentary}
-                else:
-                    selected_custom = st.multiselect(
-                        "Select custom components:", 
-                        options=available_names, 
-                        default=list(available_names[:2]),
-                        key="custom_mixture_select"
-                    )
-                    if len(selected_custom) > 0:
-                        fraction = 1.0 / len(selected_custom)
-                        mix_dict = {comp: fraction for comp in selected_custom}
-                
-                if len(mix_dict) > 0:
-                    fig_comb, ax_c = plt.subplots(figsize=(8, 5), dpi=120, facecolor="white")
-                    ax_c.set_facecolor("white")
-                    
-                    _, T_r, P_r, Tc_mix_r, Pc_mix_r = generate_envelope_plot(clean_df, mix_dict, "real_data", True, scaler_X, model_colors)
-                    plt.close()
-                    
-                    fig_comb, ax_c = plt.subplots(figsize=(8, 5), dpi=120, facecolor="white")
-                    ax_c.set_facecolor("white")
-                    
-                    ax_c.plot(T_r, P_r, color=model_colors["real_data"], lw=2.2, label="Real Data")
-                    for m_name in models_list:
-                        _, Tv, Pv, _, _ = generate_envelope_plot(clean_df, mix_dict, m_name, False, scaler_X, model_colors, trained_models[m_name])
-                        plt.close()
-                        ax_c.plot(Tv, Pv, color=model_colors[m_name], lw=1.8, label=m_name.upper())
-                    
-                    ax_c.set_xlabel("Temperature (T) [K]", fontsize=10, fontweight="bold", color="green")
-                    ax_c.set_ylabel("Pressure (P) [bar]", fontsize=10, fontweight="bold", color="green")
-                    ax_c.set_title("Combined P-T Phase Envelopes Comparison", fontsize=11, fontweight="bold")
-                    ax_c.legend(frameon=True, facecolor="white")
-                    ax_c.grid(True, linestyle="--", alpha=0.5)
-                    st.pyplot(fig_comb)
-                    plt.close(fig_comb)
-            
-            st.info("Results and chart files have been saved successfully to local directories.")
-else:
-    st.info("Please verify the file path in the sidebar and click the Start Training button.")
+            st.subheader("📈
