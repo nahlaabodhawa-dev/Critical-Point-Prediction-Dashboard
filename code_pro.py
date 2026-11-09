@@ -666,4 +666,3 @@ else:
         <div style="font-size:13px; color:#718096; margin-top:9px;">Confirm the CSV file path in the sidebar, then select Start & Analyze.</div>
     </div>
     """, unsafe_allow_html=True)
-
