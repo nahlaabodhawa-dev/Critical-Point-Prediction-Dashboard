@@ -1,11 +1,11 @@
 import os
 import io
 import warnings
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+import openpyxl
 import qrcode
 
 from scipy.interpolate import CubicSpline
@@ -212,35 +212,28 @@ st.sidebar.markdown("---")
 st.sidebar.caption("THERMAL ANALYTICS | ENGINEERING DATA SCIENCE")
 
 @st.cache_data(show_spinner=False)
-def load_data(file_path, file_mtime_ns, file_size):
+def load_data(file_path):
     if not os.path.exists(file_path):
         return None
-
     df = pd.read_csv(file_path)
     required_columns = ["name", "Vc", "Mw", "Zc", "Tc mean (K)", "Pc mean (bar)"]
     missing = [col for col in required_columns if col not in df.columns]
-
     if missing:
         raise ValueError("Missing required columns: " + ", ".join(missing))
-
     numeric_columns = ["Vc", "Mw", "Zc", "Tc mean (K)", "Pc mean (bar)"]
     if "mol weight (g/mol)" in df.columns:
         numeric_columns.append("mol weight (g/mol)")
-
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-
     df = df.dropna(subset=required_columns).copy()
     df = df[np.isfinite(df[numeric_columns]).all(axis=1)].copy()
-
     if "mol weight (g/mol)" not in df.columns:
         df["mol weight (g/mol)"] = df["Mw"]
-
     return df.reset_index(drop=True)
 
 @st.cache_resource(show_spinner=False)
-def get_cached_training(file_path, file_mtime_ns, file_size):
-    clean_df = load_data(file_path, file_mtime_ns, file_size)
+def get_cached_training(file_path):
+    clean_df = load_data(file_path)
     if clean_df is None or len(clean_df) < 10:
         return None
 
@@ -262,62 +255,52 @@ def get_cached_training(file_path, file_mtime_ns, file_size):
     trained_models = {}
     metrics_results = []
     loss_curves = {}
+    model_predictions_dict = {}
 
-    for model_name in models_list:
-        X_tr = X_train_scaled if model_name == "mlp" else X_train_raw
-        X_te = X_test_scaled if model_name == "mlp" else X_test_raw
+    for m_name in models_list:
+        X_tr = X_train_scaled if m_name == "mlp" else X_train_raw
+        X_te = X_test_scaled if m_name == "mlp" else X_test_raw
+
+        if m_name == "random_forest":
+            model_tc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
+            model_pc = RandomForestRegressor(n_estimators=100, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True)
+        elif m_name == "decision_tree":
+            model_tc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
+            model_pc = DecisionTreeRegressor(max_depth=5, min_samples_split=15, min_samples_leaf=8, random_state=42)
+        elif m_name == "mlp":
+            model_tc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
+            model_pc = MLPRegressor(hidden_layer_sizes=(64, 32), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
+        elif m_name == "xgboost":
+            model_tc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
+            model_pc = XGBRegressor(n_estimators=100, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0, random_state=42)
 
         train_losses_tc, test_losses_tc = [], []
         train_losses_pc, test_losses_pc = [], []
 
-        if model_name == "random_forest":
-            model_tc = RandomForestRegressor(n_estimators=10, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True, n_jobs=-1)
-            model_pc = RandomForestRegressor(n_estimators=10, max_depth=8, min_samples_split=10, min_samples_leaf=4, max_features=0.8, random_state=42, warm_start=True, n_jobs=-1)
-
-            for n in [10, 20, 30, 40]:
-                model_tc.n_estimators = n
-                model_pc.n_estimators = n
-                model_tc.fit(X_tr, y_train_tc)
-                model_pc.fit(X_tr, y_train_pc)
-                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
-                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
-                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
-                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-
-        elif model_name == "decision_tree":
-            for depth in range(1, 6):
-                model_tc = DecisionTreeRegressor(max_depth=depth, min_samples_split=15, min_samples_leaf=8, random_state=42)
-                model_pc = DecisionTreeRegressor(max_depth=depth, min_samples_split=15, min_samples_leaf=8, random_state=42)
-                model_tc.fit(X_tr, y_train_tc)
-                model_pc.fit(X_tr, y_train_pc)
-                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
-                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
-                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
-                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-
-        elif model_name == "mlp":
-            model_tc = MLPRegressor(hidden_layer_sizes=(32, 16), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
-            model_pc = MLPRegressor(hidden_layer_sizes=(32, 16), activation="relu", alpha=0.05, max_iter=1, warm_start=True, random_state=42)
-
+        if m_name == "mlp":
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                for _ in range(25):
+                for epoch in range(100):
                     model_tc.fit(X_tr, y_train_tc)
                     model_pc.fit(X_tr, y_train_pc)
                     train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
                     test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
                     train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
                     test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
-
-        elif model_name == "xgboost":
-            model_tc = XGBRegressor(n_estimators=40, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, random_state=42, objective="reg:squarederror", n_jobs=-1, verbosity=0)
-            model_pc = XGBRegressor(n_estimators=40, learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8, random_state=42, objective="reg:squarederror", n_jobs=-1, verbosity=0)
-
-            for n in [10, 20, 30, 40]:
-                model_tc.set_params(n_estimators=n)
-                model_pc.set_params(n_estimators=n)
+        elif m_name in ["random_forest", "xgboost"]:
+            for s in range(5, 105, 5):
+                model_tc.n_estimators = s
+                model_pc.n_estimators = s
                 model_tc.fit(X_tr, y_train_tc)
                 model_pc.fit(X_tr, y_train_pc)
+                train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
+                test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
+                train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
+                test_losses_pc.append(mean_squared_error(y_test_pc, model_pc.predict(X_te)))
+        else:
+            for d in range(1, 6):
+                model_tc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_tc)
+                model_pc = DecisionTreeRegressor(max_depth=d, min_samples_split=15, min_samples_leaf=8, random_state=42).fit(X_tr, y_train_pc)
                 train_losses_tc.append(mean_squared_error(y_train_tc, model_tc.predict(X_tr)))
                 test_losses_tc.append(mean_squared_error(y_test_tc, model_tc.predict(X_te)))
                 train_losses_pc.append(mean_squared_error(y_train_pc, model_pc.predict(X_tr)))
@@ -328,10 +311,31 @@ def get_cached_training(file_path, file_mtime_ns, file_size):
         pred_train_pc = model_pc.predict(X_tr)
         pred_test_pc = model_pc.predict(X_te)
 
-        trained_models[model_name] = {"model_tc": model_tc, "model_pc": model_pc}
+        trained_models[m_name] = {"model_tc": model_tc, "model_pc": model_pc}
+
+        model_preds_list = []
+        for idx, row in train_df.reset_index().iterrows():
+            model_preds_list.append({
+                "Dataset": "Train",
+                "Component": row.get("name", f"Sample_{idx}"),
+                "Actual_Tc": float(row["Tc mean (K)"]),
+                "Predicted_Tc": float(pred_train_tc[idx]),
+                "Actual_Pc": float(row["Pc mean (bar)"]),
+                "Predicted_Pc": float(pred_train_pc[idx])
+            })
+        for idx, row in test_df.reset_index().iterrows():
+            model_preds_list.append({
+                "Dataset": "Test",
+                "Component": row.get("name", f"Sample_{idx}"),
+                "Actual_Tc": float(row["Tc mean (K)"]),
+                "Predicted_Tc": float(pred_test_tc[idx]),
+                "Actual_Pc": float(row["Pc mean (bar)"]),
+                "Predicted_Pc": float(pred_test_pc[idx])
+            })
+        model_predictions_dict[m_name.upper()] = pd.DataFrame(model_preds_list)
 
         metrics_results.append({
-            "Model": model_name.upper(), "Dataset": "Train",
+            "Model": m_name.upper(), "Dataset": "Train",
             "RMSE_Tc": np.sqrt(mean_squared_error(y_train_tc, pred_train_tc)),
             "MAE_Tc": mean_absolute_error(y_train_tc, pred_train_tc),
             "R2_Tc": r2_score(y_train_tc, pred_train_tc),
@@ -339,9 +343,8 @@ def get_cached_training(file_path, file_mtime_ns, file_size):
             "MAE_Pc": mean_absolute_error(y_train_pc, pred_train_pc),
             "R2_Pc": r2_score(y_train_pc, pred_train_pc)
         })
-
         metrics_results.append({
-            "Model": model_name.upper(), "Dataset": "Test",
+            "Model": m_name.upper(), "Dataset": "Test",
             "RMSE_Tc": np.sqrt(mean_squared_error(y_test_tc, pred_test_tc)),
             "MAE_Tc": mean_absolute_error(y_test_tc, pred_test_tc),
             "R2_Tc": r2_score(y_test_tc, pred_test_tc),
@@ -350,30 +353,29 @@ def get_cached_training(file_path, file_mtime_ns, file_size):
             "R2_Pc": r2_score(y_test_pc, pred_test_pc)
         })
 
-        loss_curves[model_name] = {
+        loss_curves[m_name] = {
             "train_tc": train_losses_tc, "test_tc": test_losses_tc,
             "train_pc": train_losses_pc, "test_pc": test_losses_pc
         }
 
     metrics_df = pd.DataFrame(metrics_results)
-    return clean_df, trained_models, scaler_X, metrics_df, loss_curves, models_list
+    return clean_df, trained_models, scaler_X, metrics_df, loss_curves, models_list, model_predictions_dict
 
 def generate_envelope_plot(df, mixture_composition, model_key, is_real_data, scaler_X, model_obj_dict=None):
     comp_names = list(mixture_composition.keys())
     fractions = np.array(list(mixture_composition.values()), dtype=float)
-
     if len(comp_names) == 0 or np.any(fractions < 0) or fractions.sum() <= 0:
         raise ValueError("Invalid mixture composition.")
-
     fractions = fractions / fractions.sum()
     mix_data = []
 
     for component in comp_names:
         match = df[df["name"].astype(str).str.strip().str.lower() == str(component).strip().lower()]
         if match.empty:
-            raise ValueError(f"Component {component} not found.")
+            row = df.iloc[0]
+        else:
+            row = match.iloc[0]
 
-        row = match.iloc[0]
         if is_real_data:
             pred_tc = float(row["Tc mean (K)"])
             pred_pc = float(row["Pc mean (bar)"])
@@ -453,17 +455,15 @@ if st.session_state.get("trained", False):
         st.error(f"CSV file not found: {csv_file_path}")
         st.stop()
 
-    file_stat = os.stat(csv_file_path)
-
     try:
         with st.spinner("Loading dataset and training machine-learning models..."):
-            package = get_cached_training(csv_file_path, file_stat.st_mtime_ns, file_stat.st_size)
+            package = get_cached_training(csv_file_path)
 
         if package is None:
             st.error("The dataset must contain at least 10 valid records.")
             st.stop()
 
-        clean_df, trained_models, scaler_X, metrics_df, loss_curves, models_list = package
+        clean_df, trained_models, scaler_X, metrics_df, loss_curves, models_list, model_predictions_dict = package
     except Exception as error:
         st.error(f"Unable to prepare analysis: {error}")
         st.stop()
