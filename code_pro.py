@@ -527,13 +527,130 @@ if st.session_state.get("trained", False):
         st.subheader("Training & Testing Loss Curves")
         st.markdown('<div class="section-caption">Mean Squared Error across model training stages.</div>', unsafe_allow_html=True)
 
+        chart_columns = st.columns(2)
+        for index, model_name in enumerate(models_list):
+            curve = loss_curves[model_name]
+            with chart_columns[index % 2]:
+                fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), dpi=105)
+                axes[0].plot(curve["train_tc"], label="Train", color="#2563EB", linewidth=2)
+                axes[0].plot(curve["test_tc"], label="Test", color=RED, linestyle="--", linewidth=2)
+                axes[0].set_title(f"{model_name.upper()} — Tc", fontweight="bold", fontsize=9)
+                axes[0].set_ylabel("MSE")
+                axes[0].set_xlabel("Training Stage")
+                axes[0].legend(fontsize=8)
+                axes[0].grid(True, linestyle="--", alpha=0.3)
+
+                axes[1].plot(curve["train_pc"], label="Train", color="#2563EB", linewidth=2)
+                axes[1].plot(curve["test_pc"], label="Test", color=RED, linestyle="--", linewidth=2)
+                axes[1].set_title(f"{model_name.upper()} — Pc", fontweight="bold", fontsize=9)
+                axes[1].set_ylabel("MSE")
+                axes[1].set_xlabel("Training Stage")
+                axes[1].legend(fontsize=8)
+                axes[1].grid(True, linestyle="--", alpha=0.3)
+
+                fig.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+
     with tab_predictions:
         st.subheader("Critical Properties Prediction")
         st.markdown('<div class="section-caption">Actual and predicted critical properties for all valid components in the dataset.</div>', unsafe_allow_html=True)
 
+        prediction_rows = []
+        for _, row in clean_df.iterrows():
+            features = np.array([[float(row["Vc"]), float(row["Mw"]), float(row["Zc"])]])
+            features_scaled = scaler_X.transform(features)
+            prediction = {
+                "Component": row["name"],
+                "Actual Tc (K)": round(float(row["Tc mean (K)"]), 2),
+                "Actual Pc (bar)": round(float(row["Pc mean (bar)"]), 2)
+            }
+            for model_name in models_list:
+                model_features = features_scaled if model_name == "mlp" else features
+                predicted_tc = trained_models[model_name]["model_tc"].predict(model_features)[0]
+                predicted_pc = trained_models[model_name]["model_pc"].predict(model_features)[0]
+                prediction[f"{model_name.upper()} Tc (K)"] = round(float(predicted_tc), 2)
+                prediction[f"{model_name.upper()} Pc (bar)"] = round(float(predicted_pc), 2)
+            prediction_rows.append(prediction)
+
+        predictions_df = pd.DataFrame(prediction_rows)
+        search_component = st.text_input("Search Component", placeholder="Enter component name...")
+        display_predictions = predictions_df.copy()
+
+        if search_component.strip():
+            display_predictions = display_predictions[display_predictions["Component"].astype(str).str.contains(search_component.strip(), case=False, na=False)]
+
+        st.dataframe(display_predictions, use_container_width=True, hide_index=True)
+        csv_output = predictions_df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download Predictions CSV", data=csv_output, file_name="critical_properties_predictions.csv", mime="text/csv")
+
     with tab_envelope:
         st.subheader("P-T Phase Envelope Workspace")
         st.markdown('<div class="section-caption">Compare estimated mixture envelopes using actual or machine-learning-predicted critical properties.</div>', unsafe_allow_html=True)
+
+        available_names = clean_df["name"].dropna().unique().tolist()
+        system_category = st.selectbox("Select System Category", ["Pure Component", "Ternary Mixture (3 Components)", "Pentary Mixture (up to 5 Components)", "Custom Mixture"], key="system_category_select")
+        mix_dict = {}
+
+        if system_category == "Pure Component":
+            selected_pure = st.selectbox("Select Pure Component", options=available_names, key="pure_component_select")
+            if selected_pure:
+                mix_dict = {selected_pure: 1.0}
+        elif system_category == "Ternary Mixture (3 Components)":
+            selected_ternary = st.multiselect("Select exactly 3 components", options=available_names, default=available_names[:3], max_selections=3, key="ternary_mixture_select")
+            if len(selected_ternary) == 3:
+                fraction = 1.0 / 3
+                mix_dict = {comp: fraction for comp in selected_ternary}
+        elif system_category == "Pentary Mixture (up to 5 Components)":
+            selected_pentary = st.multiselect("Select up to 5 components", options=available_names, default=available_names[:5], max_selections=5, key="pentary_mixture_select")
+            if selected_pentary:
+                fraction = 1.0 / len(selected_pentary)
+                mix_dict = {comp: fraction for comp in selected_pentary}
+        else:
+            selected_custom = st.multiselect("Select Custom Components", options=available_names, default=available_names[:2], key="custom_mixture_select")
+            if selected_custom:
+                fraction = 1.0 / len(selected_custom)
+                mix_dict = {comp: fraction for comp in selected_custom}
+
+        if mix_dict:
+            st.markdown("### Mixture Composition")
+            composition_df = pd.DataFrame({
+                "Component": list(mix_dict.keys()),
+                "Mole Fraction (zi)": list(mix_dict.values()),
+                "Mole Percent (%)": [value * 100 for value in mix_dict.values()]
+            })
+            st.dataframe(composition_df, use_container_width=True, hide_index=True)
+
+            try:
+                fig_comb, ax = plt.subplots(figsize=(10, 6), dpi=115, facecolor="white")
+                ax.set_facecolor("white")
+
+                fig_real, T_real, P_real, Tc_real, Pc_real = generate_envelope_plot(clean_df, mix_dict, "real_data", True, scaler_X)
+                plt.close(fig_real)
+                ax.plot(T_real, P_real, color=model_colors["real_data"], linewidth=2.5, label="Actual Critical Properties")
+
+                for model_name in models_list:
+                    fig_model, T_model, P_model, _, _ = generate_envelope_plot(clean_df, mix_dict, model_name, False, scaler_X, trained_models[model_name])
+                    plt.close(fig_model)
+                    ax.plot(T_model, P_model, color=model_colors[model_name], linewidth=1.8, label=f"{model_name.upper()} Prediction")
+
+                ax.set_xlabel("Temperature (K)", fontsize=10, fontweight="bold")
+                ax.set_ylabel("Pressure (bar)", fontsize=10, fontweight="bold")
+                ax.set_title("Estimated P-T Phase Envelope Comparison", fontsize=12, fontweight="bold", color=NAVY)
+                ax.legend(frameon=True, facecolor="white", edgecolor=BORDER, fontsize=8)
+                ax.grid(True, linestyle="--", alpha=0.3)
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                fig_comb.tight_layout()
+
+                st.pyplot(fig_comb, use_container_width=True)
+                plt.close(fig_comb)
+
+                result1, result2 = st.columns(2)
+                result1.metric("Mixture Tc (Actual Data)", f"{Tc_real:.2f} K")
+                result2.metric("Mixture Pc (Actual Data)", f"{Pc_real:.2f} bar")
+            except Exception as error:
+                st.error(f"Unable to generate phase envelope: {error}")
 
     st.markdown("""
     <div class="app-footer">
