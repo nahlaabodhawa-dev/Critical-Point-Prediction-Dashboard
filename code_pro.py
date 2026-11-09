@@ -17,7 +17,7 @@ from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
 st.set_page_config(
-    page_title="Thermal Properties Analytics Dashboard",
+    page_title="Thermal Analytics Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -25,64 +25,83 @@ st.set_page_config(
 
 st.markdown("""
     <style>
+    /* Main Background & Font */
     .stApp {
-        background-color: #f4f6f9;
-        color: #333333;
+        background-color: #f8fafc;
+        color: #1e293b;
+        font-family: 'Inter', sans-serif;
     }
+    
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
-        padding-top: 1rem;
+        padding: 2rem 1rem;
     }
+    
+    /* Tabs Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background-color: transparent;
-        padding-bottom: 5px;
+        gap: 8px;
+        background-color: #f1f5f9;
+        padding: 6px;
+        border-radius: 10px;
     }
     .stTabs [data-baseweb="tab"] {
         background-color: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
         padding: 8px 16px;
         font-weight: 600;
         color: #475569;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
     .stTabs [aria-selected="true"] {
         background-color: #2563eb !important;
         color: white !important;
         border-color: #2563eb !important;
     }
+    
+    /* Buttons Styling */
     div.stButton > button {
         background-color: #2563eb;
         color: white;
-        border-radius: 6px;
+        border-radius: 8px;
         border: none;
         font-weight: 600;
         width: 100%;
+        padding: 0.6rem;
+        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
     }
     div.stButton > button:hover {
         background-color: #1d4ed8;
         color: white;
     }
+    
+    /* Metrics Styling */
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("### 🎛️ Control Panel")
-csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final.csv")
+csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final (1).csv")
 run_button = st.sidebar.button("⚡ Start & Analyze", type="primary")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📱 App QR Code")
 app_url = "https://critical-point-prediction-dashboard-lyecr5liams58tpxqqcub3.streamlit.app"
 
-qr = qrcode.QRCode(version=1, box_size=5, border=2)
+qr = qrcode.QRCode(version=1, box_size=3, border=1)
 qr.add_data(app_url)
 qr.make(fit=True)
 img_qr = qr.make_image(fill_color="black", back_color="white")
 
 buf = io.BytesIO()
 img_qr.save(buf, format="PNG")
-st.sidebar.image(buf.getvalue(), caption="Scan to open", width=130)
+st.sidebar.image(buf.getvalue(), caption="Scan to open", width=110)
 
 st.title("📊 Thermal Properties Analytics & Dashboard")
 st.markdown("Professional machine learning platform for thermodynamic property evaluation and phase envelope modeling.")
@@ -96,7 +115,7 @@ def load_data(file_path):
 
 @st.cache_resource
 def get_cached_training(file_path):
-    cache_file = "optimized_models_cache_v2.pkl"
+    cache_file = "optimized_models_cache_v5.pkl"
     if os.path.exists(cache_file):
         return joblib.load(cache_file)
     
@@ -327,7 +346,6 @@ if run_button or st.session_state.get("trained", True):
                     st.subheader("🔍 Exploratory Data Analysis (EDA) & Dataset Overview")
                     st.markdown("Here is a comprehensive exploratory analysis of the dataset, including summary statistics, distributions, and feature correlations.")
                     
-                    # 1. Quick metrics overview
                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     col_m1.metric("Total Components", len(clean_df))
                     col_m2.metric("Avg Tc (K)", f"{clean_df['Tc mean (K)'].mean():.2f}")
@@ -335,14 +353,10 @@ if run_button or st.session_state.get("trained", True):
                     col_m4.metric("Avg Mol Weight", f"{clean_df['mol weight (g/mol)'].mean():.2f}")
                     
                     st.markdown("---")
-                    
-                    # 2. Dataset preview
                     st.markdown("### 📋 Dataset Preview")
                     st.dataframe(clean_df.head(10), use_container_width=True)
                     
                     st.markdown("---")
-                    
-                    # 3. Interactive Visualizations (EDA Plots)
                     st.markdown("### 📊 Interactive Data Distributions & Relationships")
                     
                     col_e1, col_e2 = st.columns(2)
@@ -518,6 +532,6 @@ if run_button or st.session_state.get("trained", True):
                         st.pyplot(fig_comb)
                         plt.close(fig_comb)
                 
-                st.info("Results and chart files have= been saved successfully to local directories.")
+                st.info("Results and chart files have been saved successfully to local directories.")
 else:
     st.info("Please verify the file path in the sidebar and click the Start Training button.")
