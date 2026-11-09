@@ -1066,7 +1066,7 @@ if st.session_state.get("trained", False):
         if package is None:
             st.error(
                 "The dataset must contain at least 10 valid records.")
-            st.stop()(
+            st.stop()
             clean_df,trained_models,scaler_X,metrics_df,loss_curves,models_list) = package
     except Exception as error:
         st.error(
