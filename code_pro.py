@@ -28,11 +28,30 @@ st.markdown("""
     .stApp {
         background-color: #f8fafc;
         color: #1e293b;
+        font-family: 'Inter', sans-serif;
     }
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
         padding: 1.5rem 1rem;
+    }
+    [data-testid="stSidebar"] .stTextInput {
+        margin-bottom: 0.5rem;
+    }
+    div.stButton > button {
+        background-color: #2563eb;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        font-weight: 600;
+        width: 100%;
+        padding: 0.55rem;
+        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+        margin-top: 0.5rem;
+    }
+    div.stButton > button:hover {
+        background-color: #1d4ed8;
+        color: white;
     }
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
@@ -53,20 +72,6 @@ st.markdown("""
         color: white !important;
         border-color: #2563eb !important;
     }
-    div.stButton > button {
-        background-color: #2563eb;
-        color: white;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        width: 100%;
-        padding: 0.6rem;
-        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
-    }
-    div.stButton > button:hover {
-        background-color: #1d4ed8;
-        color: white;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +90,7 @@ img_qr = qr.make_image(fill_color="black", back_color="white")
 
 buf = io.BytesIO()
 img_qr.save(buf, format="PNG")
-st.sidebar.image(buf.getvalue(), caption="Scan to open", width=105)
+st.sidebar.image(buf.getvalue(), caption="Scan to open", width=100)
 
 st.title("📊 Thermal Properties Analytics & Dashboard")
 st.markdown("Professional machine learning platform for thermodynamic property evaluation and phase envelope modeling.")
@@ -99,7 +104,7 @@ def load_data(file_path):
 
 @st.cache_resource
 def get_cached_training(file_path):
-    cache_file = "optimized_models_cache_v7.pkl"
+    cache_file = "optimized_models_cache_v10.pkl"
     if os.path.exists(cache_file):
         return joblib.load(cache_file)
     
