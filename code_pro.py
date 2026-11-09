@@ -71,7 +71,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("### 🎛️ Control Panel")
-csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final (1).csv", key="csv_path_input")
+csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final.csv", key="csv_path_input")
 run_button = st.sidebar.button("⚡ Start & Analyze", type="primary")
 
 st.sidebar.markdown("---")
@@ -99,7 +99,7 @@ def load_data(file_path):
 
 @st.cache_resource
 def get_cached_training(file_path):
-    cache_file = "optimized_models_cache_v6.pkl"
+    cache_file = "optimized_models_cache_v7.pkl"
     if os.path.exists(cache_file):
         return joblib.load(cache_file)
     
