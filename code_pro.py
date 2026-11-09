@@ -25,43 +25,34 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* Main Background & Font */
     .stApp {
         background-color: #f8fafc;
         color: #1e293b;
-        font-family: 'Inter', sans-serif;
     }
-    
-    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
-        padding: 2rem 1rem;
+        padding: 1.5rem 1rem;
     }
-    
-    /* Tabs Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 10px;
         background-color: #f1f5f9;
-        padding: 6px;
-        border-radius: 10px;
+        padding: 8px;
+        border-radius: 12px;
     }
     .stTabs [data-baseweb="tab"] {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 8px 16px;
+        padding: 8px 18px;
         font-weight: 600;
         color: #475569;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
     .stTabs [aria-selected="true"] {
         background-color: #2563eb !important;
         color: white !important;
         border-color: #2563eb !important;
     }
-    
-    /* Buttons Styling */
     div.stButton > button {
         background-color: #2563eb;
         color: white;
@@ -76,18 +67,11 @@ st.markdown("""
         background-color: #1d4ed8;
         color: white;
     }
-    
-    /* Metrics Styling */
-    [data-testid="stMetricValue"] {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #1e293b;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("### 🎛️ Control Panel")
-csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final.csv")
+csv_file_path = st.sidebar.text_input("CSV File Path", value="critprop_merged_final (1).csv", key="csv_path_input")
 run_button = st.sidebar.button("⚡ Start & Analyze", type="primary")
 
 st.sidebar.markdown("---")
@@ -101,7 +85,7 @@ img_qr = qr.make_image(fill_color="black", back_color="white")
 
 buf = io.BytesIO()
 img_qr.save(buf, format="PNG")
-st.sidebar.image(buf.getvalue(), caption="Scan to open", width=110)
+st.sidebar.image(buf.getvalue(), caption="Scan to open", width=105)
 
 st.title("📊 Thermal Properties Analytics & Dashboard")
 st.markdown("Professional machine learning platform for thermodynamic property evaluation and phase envelope modeling.")
@@ -115,7 +99,7 @@ def load_data(file_path):
 
 @st.cache_resource
 def get_cached_training(file_path):
-    cache_file = "optimized_models_cache_v5.pkl"
+    cache_file = "optimized_models_cache_v6.pkl"
     if os.path.exists(cache_file):
         return joblib.load(cache_file)
     
