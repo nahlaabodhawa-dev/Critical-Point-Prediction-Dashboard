@@ -18,6 +18,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
+
+# ==========================================================
+# 1. PAGE CONFIGURATION
+# ==========================================================
+
 st.set_page_config(
     page_title="Thermal Analytics",
     page_icon="📊",
@@ -39,6 +44,12 @@ WHITE = "#FFFFFF"
 TEXT = "#243B53"
 MUTED = "#718096"
 BORDER = "#E1E8F0"
+
+
+# ==========================================================
+# 2. CUSTOM CSS
+# ==========================================================
+
 st.markdown(f"""
 <style>
 
@@ -208,6 +219,12 @@ div[data-testid="stAlert"] {{
 
 </style>
 """, unsafe_allow_html=True)
+
+
+# ==========================================================
+# 3. APPLICATION HEADER
+# ==========================================================
+
 st.markdown("""
 <div style="
     background:linear-gradient(115deg,#102A43,#1D4E89);
@@ -277,6 +294,11 @@ st.markdown("""
 
 </div>
 """, unsafe_allow_html=True)
+
+
+# ==========================================================
+# 4. SIDEBAR
+# ==========================================================
 
 st.sidebar.markdown("""
 <div style="padding:8px 0 18px 0;">
@@ -349,6 +371,12 @@ st.sidebar.image(
 
 st.sidebar.markdown("---")
 st.sidebar.caption("THERMAL ANALYTICS | ENGINEERING DATA SCIENCE")
+
+
+# ==========================================================
+# 5. DATA LOADING
+# ==========================================================
+
 @st.cache_data(show_spinner=False)
 def load_data(file_path, file_mtime_ns, file_size):
 
@@ -405,6 +433,12 @@ def load_data(file_path, file_mtime_ns, file_size):
         df["mol weight (g/mol)"] = df["Mw"]
 
     return df.reset_index(drop=True)
+
+
+# ==========================================================
+# 6. MACHINE LEARNING TRAINING
+# ==========================================================
+
 @st.cache_resource(show_spinner=False)
 def get_cached_training(file_path, file_mtime_ns, file_size):
 
@@ -814,16 +848,28 @@ def get_cached_training(file_path, file_mtime_ns, file_size):
 
             "train_tc": train_losses_tc,
             "test_tc": test_losses_tc,
+
             "train_pc": train_losses_pc,
-            "test_pc": test_losses_pc}
+            "test_pc": test_losses_pc
+
+        }
+
     metrics_df = pd.DataFrame(metrics_results)
+
     return (
         clean_df,
         trained_models,
         scaler_X,
         metrics_df,
         loss_curves,
-        models_list)
+        models_list
+    )
+
+
+# ==========================================================
+# 7. PHASE ENVELOPE FUNCTION
+# ==========================================================
+
 def generate_envelope_plot(
     df,
     mixture_composition,
@@ -1050,41 +1096,92 @@ def generate_envelope_plot(
     fig.tight_layout()
 
     return fig, T_vals, P_vals, Tc_mix, Pc_mix
+
+
+# ==========================================================
+# 8. MAIN APPLICATION
+# ==========================================================
+
 if run_button:
     st.session_state["trained"] = True
+
 if st.session_state.get("trained", False):
+
     if not os.path.exists(csv_file_path):
+
         st.error(
-            f"CSV file not found: {csv_file_path}")
+            f"CSV file not found: {csv_file_path}"
+        )
+
         st.stop()
+
     file_stat = os.stat(csv_file_path)
+
     try:
+
         with st.spinner(
-            "Loading dataset and training machine-learning models..."):
+            "Loading dataset and training machine-learning models..."
+        ):
+
             package = get_cached_training(
-                csv_file_path,file_stat.st_mtime_ns,file_stat.st_size)
+                csv_file_path,
+                file_stat.st_mtime_ns,
+                file_stat.st_size
+            )
+
         if package is None:
+
             st.error(
-                "The dataset must contain at least 10 valid records.")
+                "The dataset must contain at least 10 valid records."
+            )
+
             st.stop()
-            clean_df,trained_models,scaler_X,metrics_df,loss_curves,models_list) = package
+
+        (
+            clean_df,
+            trained_models,
+            scaler_X,
+            metrics_df,
+            loss_curves,
+            models_list
+        ) = package
+
     except Exception as error:
+
         st.error(
-            f"Unable to prepare analysis: {error}")
+            f"Unable to prepare analysis: {error}"
+        )
+
         st.stop()
+
     model_colors = {
 
         "real_data": NAVY,
         "random_forest": "#2563EB",
         "decision_tree": GREEN,
         "mlp": ORANGE,
-        "xgboost": RED}
+        "xgboost": RED
+
+    }
+
+    # ======================================================
+    # WORKSPACE TABS
+    # ======================================================
+
     tab_eda, tab_metrics, tab_loss, tab_predictions, tab_envelope = st.tabs([
+
         "🔍 Data Overview",
         "📊 Model Performance",
         "📉 Training Analytics",
         "🌐 Predictions",
-        "📈 Phase Envelopes"])
+        "📈 Phase Envelopes"
+
+    ])
+
+    # ======================================================
+    # TAB 1: EDA
+    # ======================================================
+
     with tab_eda:
 
         st.subheader(
@@ -1284,29 +1381,52 @@ if st.session_state.get("trained", False):
 
             st.pyplot(
                 fig,
-                use_container_width=True)
+                use_container_width=True
+            )
+
             plt.close(fig)
+
         with st.expander("Descriptive Statistics"):
+
             st.dataframe(
                 clean_df.describe().T,
-                use_container_width=True)
+                use_container_width=True
+            )
+
+    # ======================================================
+    # TAB 2: MODEL PERFORMANCE
+    # ======================================================
+
     with tab_metrics:
-        st.subheader("Model Performance Comparison")
+
+        st.subheader(
+            "Model Performance Comparison"
+        )
+
         st.markdown(
             '<div class="section-caption">'
             'Training and testing metrics for critical temperature '
             '(Tc) and critical pressure (Pc).'
             '</div>',
-            unsafe_allow_html=True)
+            unsafe_allow_html=True
+        )
+
         st.dataframe(
             metrics_df.round(4),
             use_container_width=True,
-            hide_index=True)
+            hide_index=True
+        )
+
         st.markdown("### Test Set Comparison")
+
         test_metrics = metrics_df[
-            metrics_df["Dataset"] == "Test"].copy()
+            metrics_df["Dataset"] == "Test"
+        ].copy()
+
         col_tc, col_pc = st.columns(2)
+
         with col_tc:
+
             fig, ax = plt.subplots(
                 figsize=(6, 4),
                 dpi=110
@@ -1392,9 +1512,18 @@ if st.session_state.get("trained", False):
         best1.metric(
             "Lowest Test RMSE — Tc",
             best_tc["Model"],
-            f"{best_tc['RMSE_Tc']:.4f} K")
+            f"{best_tc['RMSE_Tc']:.4f} K"
+        )
+
         best2.metric(
-            "Lowest Test RMSE — Pc",best_pc["Model"],f"{best_pc['RMSE_Pc']:.4f} bar")
+            "Lowest Test RMSE — Pc",
+            best_pc["Model"],
+            f"{best_pc['RMSE_Pc']:.4f} bar"
+        )
+
+    # ======================================================
+    # TAB 3: LOSS CURVES
+    # ======================================================
 
     with tab_loss:
 
@@ -1483,27 +1612,64 @@ if st.session_state.get("trained", False):
                 axes[1].grid(
                     True,
                     linestyle="--",
-                    alpha=0.3)
+                    alpha=0.3
+                )
+
                 fig.tight_layout()
-                st.pyplot(fig,use_container_width=True)
+
+                st.pyplot(
+                    fig,
+                    use_container_width=True
+                )
+
                 plt.close(fig)
+
+    # ======================================================
+    # TAB 4: PREDICTIONS
+    # ======================================================
+
     with tab_predictions:
+
         st.subheader(
-            "Critical Properties Prediction")
+            "Critical Properties Prediction"
+        )
+
         st.markdown(
-            '<div class="section-caption">''Actual and predicted critical properties for all ''valid components in the dataset.'
-            '</div>',unsafe_allow_html=True)
+            '<div class="section-caption">'
+            'Actual and predicted critical properties for all '
+            'valid components in the dataset.'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
         prediction_rows = []
+
         for _, row in clean_df.iterrows():
-            features = np.array([[float(row["Vc"]),float(row["Mw"]),float(row["Zc"])]])
+
+            features = np.array([[
+                float(row["Vc"]),
+                float(row["Mw"]),
+                float(row["Zc"])
+            ]])
+
             features_scaled = scaler_X.transform(features)
+
             prediction = {
+
                 "Component": row["name"],
+
                 "Actual Tc (K)": round(
-                    float(row["Tc mean (K)"]), 2),
+                    float(row["Tc mean (K)"]), 2
+                ),
+
                 "Actual Pc (bar)": round(
-                    float(row["Pc mean (bar)"]), 2)}
+                    float(row["Pc mean (bar)"]), 2
+                )
+
+            }
+
             for model_name in models_list:
+
                 model_features = (
                     features_scaled
                     if model_name == "mlp"
@@ -1575,10 +1741,16 @@ if st.session_state.get("trained", False):
             file_name="critical_properties_predictions.csv",
             mime="text/csv"
         )
+
         st.caption(
             "Note: predictions for all components include training "
             "and test records. Test-set metrics above should be used "
-            "to evaluate model generalization.")
+            "to evaluate model generalization."
+        )
+
+    # ======================================================
+    # TAB 5: PHASE ENVELOPE
+    # ======================================================
 
     with tab_envelope:
 
@@ -1853,11 +2025,18 @@ if st.session_state.get("trained", False):
 
                 result2.metric(
                     "Mixture Pc (Actual Data)",
-                    f"{Pc_real:.2f} bar")
+                    f"{Pc_real:.2f} bar"
+                )
+
             except Exception as error:
 
                 st.error(
-                    f"Unable to generate phase envelope: {error}")
+                    f"Unable to generate phase envelope: {error}"
+                )
+
+    # ======================================================
+    # FOOTER
+    # ======================================================
 
     st.markdown("""
     <div class="app-footer">
@@ -1871,6 +2050,12 @@ if st.session_state.get("trained", False):
 
     </div>
     """, unsafe_allow_html=True)
+
+
+# ==========================================================
+# 9. INITIAL STATE
+# ==========================================================
+
 else:
 
     st.markdown("""
